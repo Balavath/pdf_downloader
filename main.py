@@ -356,7 +356,7 @@ def generate_links(dataframe, object_cache, auth):
 
 # Создаем список url
 object_cache = load_cached_data()
-urls = generate_links(df, object_cache)
+urls = generate_links(df, object_cache, auth)
 
 # Добавляем ссылки как новый столбец
 df["Ссылка"] = urls
