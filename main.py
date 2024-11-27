@@ -289,7 +289,7 @@ def extract_zones(object_name, object_cache, auth):
     layout_url = f"http://merchant.corp.tander.ru/api/branch-office/{id_ws}/layout-zones-tree/"
     
     try:
-        response = requests.get(layout_url, auth)
+        response = requests.get(layout_url, auth=auth)
         response.raise_for_status()  # Поднимаем исключение, если статус ответа не 200
         zones_data = response.json()
         
@@ -303,8 +303,8 @@ def extract_zones(object_name, object_cache, auth):
                 "approved": is_approved,
                 "zones": tz.get("zones", [])  # Зоны внутри торгового зала
             })
-        return formatted_zones
         print(formatted_zones)
+        return formatted_zones
     except requests.exceptions.RequestException as e:
         print(f"Ошибка загрузки зон для {object_name}: {e}")
         return []
@@ -327,7 +327,7 @@ def generate_links(dataframe, object_cache, auth):
         if not zones_data:
             links.append(None)  # Пропуск строки, если зоны не найдены
             continue
-
+        print(zones_data)
         # Если ТЗ не указан, выбираем первый утверждённый
         if not tz_name:
             matching_tz = next((tz for tz in zones_data if tz["approved"]), None)
@@ -340,23 +340,27 @@ def generate_links(dataframe, object_cache, auth):
                 links.append(None)
                 continue
 
-        # Ищем зону внутри торгового зала
-        matching_zone = next((zone for zone in matching_tz["zones"] if zone["name"] == zone_name), None)
+         # Ищем зону внутри торгового зала
+        matching_zone = next(
+            (zone for zone in matching_tz["children"] if zone["name"] == zone_name),
+            None
+        )
         if not matching_zone:
             links.append(None)
             continue
 
         # Формируем ссылку
-        id_zone = matching_zone["id"]
+        id_zone = matching_zone["editHref"].split("/")[-1]
         pdf_suffix = PDF_TYPE_SUFFIX.get(pdf_type, ".pdf")
         link = f"http://merchant.corp.tander.ru/api/layout-zone/{path}/{id_zone}{pdf_suffix}"
+        print(link)
         links.append(link)
 
     return links
 
 # Создаем список url
 object_cache = load_cached_data()
-urls = generate_links(df, object_cache, auth)
+urls = generate_links(df, object_cache, auth=auth)
 
 # Добавляем ссылки как новый столбец
 df["Ссылка"] = urls
@@ -367,7 +371,7 @@ pairs = df[["Имя объекта", "Имя зоны", "Имя ТЗ", "Тип P
 
 # Определяем функцию для загрузки файла по url
 def download_file(pair):
-    name, zone, path, tz_name, pdf_type, path, ws_format, url = pair
+    name, zone, tz_name, pdf_type, path, ws_format, url = pair
     # Отправляем запрос к url с авторизацией
     response = requests.get(url, auth=auth)
     # Записываем в лог сообщение о начале загрузки
