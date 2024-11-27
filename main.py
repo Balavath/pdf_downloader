@@ -297,12 +297,12 @@ def extract_zones(object_name, object_cache, auth):
             is_approved = "(Утверждённый)" in tz["text"]
             tz_name = tz["text"].replace(" (Утверждённый)", "").strip()
             formatted_zones.append({
-                "id": tz["id"],
-                "name": tz_name,
+                "tzname": tz_name,
                 "approved": is_approved,
                 "zones": tz.get("zones", [])  # Зоны внутри торгового зала
             })
         return formatted_zones
+        print(formatted_zones)
     except requests.exceptions.RequestException as e:
         print(f"Ошибка загрузки зон для {object_name}: {e}")
         return []
