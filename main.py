@@ -316,7 +316,7 @@ def generate_links(dataframe, object_cache, auth):
     """
     links = []
     for _, row in dataframe.iterrows():
-        store_name = row["Имя магазина"]
+        store_name = row["Имя объекта"]
         zone_name = row["Имя зоны"]
         tz_name = row["Имя ТЗ"] if not pd.isna(row["Имя ТЗ"]) else None
         pdf_type = row["Тип PDF"]
