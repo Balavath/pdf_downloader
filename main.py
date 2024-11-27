@@ -12,6 +12,7 @@ import sys
 import getpass
 import time
 import datetime
+from datetime import datetime
 import logging
 import pickle
 import json
@@ -19,8 +20,8 @@ from cryptography.fernet import Fernet
 from tkinter import filedialog
 
 # Перед компиляцией снять комментарий
-exe_path = os.path.dirname(sys.executable)
-#exe_path = "E:\\vscode\\download_pdf"
+#exe_path = os.path.dirname(sys.executable)
+exe_path = "E:\\vscode\\dist\\pdf_downloader\\pdf_downloader"
 print(f"Рабочая папка: {exe_path}")
 os.chdir(exe_path)
 print(os.curdir)
@@ -254,7 +255,8 @@ def load_cached_data():
     
     # Если кэш отсутствует или устарел, делаем запрос
     print("Обновляем данные с сервера...")
-    response = requests.get(BASE_URL)
+    auth = (login, password)
+    response = requests.get(BASE_URL, auth=auth, verify=False)
     if response.status_code == 200:
         data = response.json()
         # Сохраняем данные в кэш
@@ -272,10 +274,10 @@ def extract_zones(object_name, object_cache):
     if not matched_object:
         print(f"Объект {object_name} не найден в списке.")
         return []
-
+    auth = (login, password)
     id_ws = matched_object["id_ws"]
     layout_url = f"http://merchant.corp.tander.ru/api/branch-office/{id_ws}/layout-zones-tree/"
-    response = requests.get(layout_url)
+    response = requests.get(layout_url, auth=auth)
     if response.status_code == 200:
         return response.json()
     else:
@@ -304,6 +306,7 @@ def generate_links(dataframe, object_cache):
 
         # Ищем зоны для текущего объекта
         zones = extract_zones(name, object_cache)
+        print(zones)
         matched_zone = next((z for z in zones if z.get("name") == zone), None)
         if not matched_zone:
             print(f"Зона {zone} для объекта {name} не найдена.")
