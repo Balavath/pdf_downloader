@@ -255,8 +255,7 @@ def load_cached_data():
     
     # Если кэш отсутствует или устарел, делаем запрос
     print("Обновляем данные с сервера...")
-    auth = (login, password)
-    response = requests.get(BASE_URL, auth=auth, verify=False)
+    response = requests.get(BASE_URL, auth, verify=False)
     if response.status_code == 200:
         data = response.json()
         # Сохраняем данные в кэш
@@ -288,7 +287,7 @@ def extract_zones(object_name, object_cache, auth):
     layout_url = f"http://merchant.corp.tander.ru/api/branch-office/{id_ws}/layout-zones-tree/"
     
     try:
-        response = requests.get(layout_url, auth=auth)
+        response = requests.get(layout_url, auth)
         response.raise_for_status()  # Поднимаем исключение, если статус ответа не 200
         zones_data = response.json()
         
@@ -308,93 +307,66 @@ def extract_zones(object_name, object_cache, auth):
         print(f"Ошибка загрузки зон для {object_name}: {e}")
         return []
     
-def preprocess_dataframe(dataframe):
-    """
-    Обрабатывает начальные данные: выделяет утвержденные торговые залы и корректирует имя ТЗ.
-    Добавляет два новых столбца: 'Утвержденный ТЗ' и 'Имя ТЗ'.
-    """
-    def process_tz_name(tz_name):
-        if tz_name.endswith("(Утверждённый)"):
-            print(tz_name)
-            return tz_name[:-13].strip(), 1  # Убираем "(Утверждённый)" и ставим флаг 1
-        return tz_name, 0  # Оставляем имя как есть и ставим флаг 0
-
-    # Разделяем имя ТЗ и статус утвержденности
-    dataframe[["Имя ТЗ", "Утвержденный ТЗ"]] = dataframe["Имя ТЗ"].apply(
-        lambda x: pd.Series(process_tz_name(x))
-    )
-    return dataframe
-
-
 def generate_links(dataframe, object_cache, auth):
     """
-    Генерирует ссылки для каждой строки пользовательского списка с учетом полученных данных.
+    Генерирует ссылки для каждой строки пользовательского списка.
+    Возвращает список URL.
     """
-    # Предобработка данных
-    dataframe = preprocess_dataframe(dataframe)
-    
     links = []
     for _, row in dataframe.iterrows():
         store_name = row["Имя магазина"]
         zone_name = row["Имя зоны"]
         tz_name = row["Имя ТЗ"] if not pd.isna(row["Имя ТЗ"]) else None
-        is_approved = row["Утвержденный ТЗ"]
         pdf_type = row["Тип PDF"]
         path = row["Полный путь"]
 
         # Загружаем зоны для магазина
         zones_data = extract_zones(store_name, object_cache, auth)
         if not zones_data:
+            links.append(None)  # Пропуск строки, если зоны не найдены
             continue
-        
+
         # Если ТЗ не указан, выбираем первый утверждённый
         if not tz_name:
             matching_tz = next((tz for tz in zones_data if tz["approved"]), None)
             if not matching_tz:
-                print(f"Утверждённый ТЗ не найден для магазина {store_name}.")
+                links.append(None)
                 continue
         else:
             matching_tz = next((tz for tz in zones_data if tz["name"] == tz_name), None)
             if not matching_tz:
-                print(f"ТЗ {tz_name} не найден для магазина {store_name}.")
+                links.append(None)
                 continue
 
         # Ищем зону внутри торгового зала
         matching_zone = next((zone for zone in matching_tz["zones"] if zone["name"] == zone_name), None)
         if not matching_zone:
-            print(f"Зона {zone_name} не найдена в ТЗ {tz_name} магазина {store_name}.")
+            links.append(None)
             continue
 
         # Формируем ссылку
         id_zone = matching_zone["id"]
         pdf_suffix = PDF_TYPE_SUFFIX.get(pdf_type, ".pdf")
         link = f"http://merchant.corp.tander.ru/api/layout-zone/{path}/{id_zone}{pdf_suffix}"
+        links.append(link)
 
-        links.append({
-            "Имя магазина": store_name,
-            "Имя зоны": zone_name,
-            "Имя ТЗ": tz_name if tz_name else "Утверждённый (авто)",
-            "Тип PDF": pdf_type,
-            "Ссылка": link
-        })
-
-    return pd.DataFrame(links)
+    return links
 
 # Создаем список url
-names = df["Имя объекта"].tolist()
-zones = df["Имя зоны"].tolist()
-tz_names = df["Имя ТЗ"].tolist()
-pdf_types = df["Тип PDF"].tolist()
-paths = df["Полный путь"].tolist()
-ws_format = df["Формат"].tolist()
 object_cache = load_cached_data()
 urls = generate_links(df, object_cache)
-pairs = zip(names, zones, tz_names, pdf_types, paths, ws_format, urls)
+
+# Добавляем ссылки как новый столбец
+df["Ссылка"] = urls
+
+# Упрощаем доступ к данным: готовый DataFrame уже содержит всё необходимое
+pairs = df[["Имя объекта", "Имя зоны", "Имя ТЗ", "Тип PDF", "Полный путь", "Формат", "Ссылка"]].to_records(index=False)
+
 
 # Определяем функцию для загрузки файла по url
 def download_file(pair):
     name, zone, path, tz_name, pdf_type, path, ws_format, url = pair
-    global login, password
+    global login, password, auth
     # Задаем параметры авторизации
     auth = (login, password)
     # Отправляем запрос к url с авторизацией
