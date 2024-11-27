@@ -74,7 +74,7 @@ else:
     print(f"Режим работы инструмента не выбран, по-умолчанию выбрана загрузка в одну папку")
     logging.info(f"Режим работы инструмента не выбран, по-умолчанию выбрана загрузка в одну папку")
     tool_mode='mm'
-global login, password
+global login, password,auth
 
 
 login = ""
@@ -238,7 +238,9 @@ PDF_TYPE_SUFFIX = {
     "ПГ для ценникодержателей": "_barcode.pdf",
     "Без фото": ".pdf"
 }
-
+# Задаем параметры авторизации
+auth = (login, password)
+    
 def load_cached_data():
     """
     Загружает данные из кэша или запрашивает их, если кэш устарел или отсутствует.
@@ -366,9 +368,6 @@ pairs = df[["Имя объекта", "Имя зоны", "Имя ТЗ", "Тип P
 # Определяем функцию для загрузки файла по url
 def download_file(pair):
     name, zone, path, tz_name, pdf_type, path, ws_format, url = pair
-    global login, password, auth
-    # Задаем параметры авторизации
-    auth = (login, password)
     # Отправляем запрос к url с авторизацией
     response = requests.get(url, auth=auth)
     # Записываем в лог сообщение о начале загрузки
