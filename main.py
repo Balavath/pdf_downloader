@@ -11,8 +11,7 @@ import tkinter as tk
 import sys
 import getpass
 import time
-import datetime
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 import pickle
 import json
@@ -221,7 +220,12 @@ print(f"Считываем список объектов и зон из файл
 df = pd.read_excel("urls.xlsx")
 
 if tool_mode in ['mm','alt']:
+    root= tk.Tk()
+    root.withdraw()
+    root.lift()
+    root.attributes('-topmost', True)
     start_folder = filedialog.askdirectory(title='Выберите стартовую папку')
+    root.quit
     start_folder=start_folder.replace("/","\\")
     if start_folder == "":
         start_folder = exe_path
@@ -257,7 +261,7 @@ def load_cached_data():
     
     # Если кэш отсутствует или устарел, делаем запрос
     print("Обновляем данные с сервера...")
-    response = requests.get(BASE_URL, auth, verify=False)
+    response = requests.get(BASE_URL, auth=auth, verify=False)
     if response.status_code == 200:
         data = response.json()
         # Сохраняем данные в кэш
@@ -301,10 +305,10 @@ def extract_zones(object_name, object_cache, auth):
             formatted_zones.append({
                 "tzname": tz_name,
                 "approved": is_approved,
-                "zones": tz.get("zones", [])  # Зоны внутри торгового зала
+                "children": tz.get("children", [])  # Зоны внутри торгового зала
             })
-        print(formatted_zones)
-        return formatted_zones
+        #print(f"Форматированные зоны {formatted_zones}")
+        return formatted_zones, id_ws
     except requests.exceptions.RequestException as e:
         print(f"Ошибка загрузки зон для {object_name}: {e}")
         return []
@@ -321,42 +325,59 @@ def generate_links(dataframe, object_cache, auth):
         tz_name = row["Имя ТЗ"] if not pd.isna(row["Имя ТЗ"]) else None
         pdf_type = row["Тип PDF"]
         path = row["Полный путь"]
+        print(f"{store_name} {zone_name} {tz_name} {pdf_type} {path}")
 
         # Загружаем зоны для магазина
-        zones_data = extract_zones(store_name, object_cache, auth)
+        zones_data, id_ws = extract_zones(store_name, object_cache, auth=auth)
         if not zones_data:
-            links.append(None)  # Пропуск строки, если зоны не найдены
+            links.append(None)
             continue
-        print(zones_data)
-        # Если ТЗ не указан, выбираем первый утверждённый
+        
+        # Ищем ТЗ по имени или берем первый утвержденный
+        matching_tz = None
         if not tz_name:
-            matching_tz = next((tz for tz in zones_data if tz["approved"]), None)
-            if not matching_tz:
-                links.append(None)
-                continue
+            print("Имя ТЗ не указано, берем утвержденный")
+            matching_tz = next((tz for tz in zones_data if tz.get("approved")), None)
         else:
-            matching_tz = next((tz for tz in zones_data if tz["name"] == tz_name), None)
-            if not matching_tz:
-                links.append(None)
-                continue
+            matching_tz = next(
+                (tz for tz in zones_data if clean_html_tags(tz.get("tzname", "")) == tz_name),
+                None
+            )
 
-         # Ищем зону внутри торгового зала
-        matching_zone = next(
-            (zone for zone in matching_tz["children"] if zone["name"] == zone_name),
-            None
-        )
-        if not matching_zone:
+        if not matching_tz or "children" not in matching_tz:
             links.append(None)
             continue
 
-        # Формируем ссылку
-        id_zone = matching_zone["editHref"].split("/")[-1]
-        pdf_suffix = PDF_TYPE_SUFFIX.get(pdf_type, ".pdf")
-        link = f"http://merchant.corp.tander.ru/api/layout-zone/{path}/{id_zone}{pdf_suffix}"
-        print(link)
-        links.append(link)
+        tz_found_name = clean_html_tags(matching_tz.get("tzname", "Без имени"))
+        print(f"Ищем зоны с именем '{zone_name}' внутри ТЗ '{tz_found_name}'...")
+
+        # Ищем зону с нужным именем внутри ТЗ
+        id_zone = None
+        for zone in matching_tz.get("children", []):
+            if zone.get("name") == zone_name:
+                edit_href = zone.get("editHref", "")
+                id_zone = edit_href.rstrip("/").split("/")[-1] if edit_href else "Не найден"
+                print(f"  Найдена зона '{zone_name}', editHref: {edit_href}, id_zone: {id_zone}")
+                break  # Выходим после первого совпадения
+
+        if id_zone:
+            print(f"Зона с именем '{zone_name}' найдена, id_zone: {id_zone}")
+            pdf_suffix = PDF_TYPE_SUFFIX.get(pdf_type, ".pdf")
+            link = f"http://merchant.corp.tander.ru/api/layout-zone/{id_ws}/{id_zone}{pdf_suffix}"
+            links.append(link)
+            print(link)
+        else:
+            print(f"Зоны с именем '{zone_name}' не найдены.")
+            links.append(None)
 
     return links
+
+def clean_html_tags(text):
+    """
+    Удаляет HTML-теги из строки.
+    """
+    import re
+    return re.sub(r"<.*?>", "", text)
 
 # Создаем список url
 object_cache = load_cached_data()
@@ -464,7 +485,7 @@ with concurrent.futures.ThreadPoolExecutor() as executor:
 
 end_time = time.time()
 elapsed_time = end_time-start_time
-delta = datetime.timedelta(seconds=round(elapsed_time,0))
+delta = timedelta(seconds=round(elapsed_time,0))
 if err > 0:
     err_text = ". Не было выгружено "+str(err) + " файлов."
 else:
