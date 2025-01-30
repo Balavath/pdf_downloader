@@ -73,7 +73,7 @@ else:
     print(f"Режим работы инструмента не выбран, по-умолчанию выбрана загрузка в одну папку")
     logging.info(f"Режим работы инструмента не выбран, по-умолчанию выбрана загрузка в одну папку")
     tool_mode='mm'
-global login, password,auth
+global login, password, auth
 
 
 login = ""
@@ -400,9 +400,15 @@ def download_file(pair):
     if response.status_code == 401:
         logging.error(f"Авторизация пользователя {login} не удалась")
         print(f"Авторизация пользователя {login} не удалась")
+        show_login_form() 
+        auth = (login, password)
+        response = requests.get(url, auth=auth)
     if response.status_code == 500:
         logging.error(f"Ошибка генерации планограммы {url}, скорее всего не настроена блочная подсветка")    
         print(f"Ошибка генерации планограммы {url}, скорее всего не настроена блочная подсветка")   
+    if response.status_code > 500:
+        logging.error(f"Ошибка сервера при генерации планограммы {url}")    
+        print(f"Ошибка сервера при генерации планограммы {url}")   
     print(f"Получаем ответ от сервера: {response.status_code}")
     # Проверяем статус ответа
     if response.status_code == 200:
